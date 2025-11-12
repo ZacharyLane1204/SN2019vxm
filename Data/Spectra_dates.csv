@@ -1,0 +1,9 @@
+File,MJD,DATE,Resolution,Observatory,Telescope,Instrument
+/Users/zgl12/Research/Sn2019vxm/2019vxm_lco/spec/2019vxm_20191224_010614_35m_v1.fits,58841.235138888886,2019-12-24,300,Apache Point Observatory,ARC 3.5m Telescope,Dual Imaging Spectrograph
+/Users/zgl12/Research/Sn2019vxm/2019vxm_lco/spec/sn2019vx_20200218_131507_mmt_v1.fits,58902.84086805556,2020-02-23,10000,Multiple Mirror Telescope Observatory,MMT 6.5m Telescope,Blue Channel Spectrograph
+/Users/zgl12/Research/Sn2019vxm/2019vxm_lco/spec/sn2019vxm_20191204_redblu_045133.818.fits,58821.74787037037,2019-12-04,500,Haleakala Observatory,Faulkes Telescope North,FLOYDS
+/Users/zgl12/Research/Sn2019vxm/2019vxm_lco/spec/sn2019vxm_20191205_redblu_054953.963.fits,58822.779178240744,2019-12-05,500,Haleakala Observatory,Faulkes Telescope North,FLOYDS
+/Users/zgl12/Research/Sn2019vxm/2019vxm_lco/spec/sn2019vxm_20191210_redblu_043915.407.fits,58827.917129629626,2019-12-10,500,Haleakala Observatory,Faulkes Telescope North,FLOYDS
+/Users/zgl12/Research/Sn2019vxm/2019vxm_lco/spec/sn2019vxm_20200321_redblu_145738.436.fits,58931.87644675926,2020-03-23,500,Haleakala Observatory,Faulkes Telescope North,FLOYDS
+/Users/zgl12/Research/Sn2019vxm/2019vxm_lco/spec/sn2019vxm_20200324_redblu_135821.759.fits,58932.82511574074,2020-03-24,500,Haleakala Observatory,Faulkes Telescope North,FLOYDS
+/Users/zgl12/Research/Sn2019vxm/2019vxm_lco/spec/tns_2019vxm_2019-12-01_17-28-00_Other_Other.fit,58818.72777777778,2019-12-01,100,Three Hill Observatory,Three Hill Observatory,ALPY 200
