@@ -36,6 +36,14 @@ from gdt.missions.fermi.gbm.tte import GbmTte
 from gdt.core.background.primitives import BackgroundRates
 from gdt.core.background.fitter import BackgroundFitter
 from gdt.core.background.binned import Polynomial
+from gdt.missions.fermi.gbm.response import GbmRsp2
+from gdt.core.spectra.fitting import SpectralFitterPgstat
+from gdt.core.spectra.functions import Comptonized, PowerLaw, Band, BlackBody, BrokenPowerLaw, DoubleBrokenPowerLaw, SmoothlyBrokenPowerLaw, PowerLawMult
+from gdt.missions.fermi.gbm.collection import GbmDetectorCollection
+from gdt.core.plot.model import ModelFit
+# from gdt.core.spectra.likelihood import SpectralData
+
+
 
 warnings.filterwarnings('ignore')
 
@@ -50,7 +58,7 @@ def download_fermi_files(download_folder, url):
         soup = BeautifulSoup(response.text, 'html.parser')
 
         links = soup.find_all('a', href=True)
-        fit_files = [link['href'] for link in links if link['href'].endswith('.fit')]
+        fit_files = [link['href'] for link in links if link['href'].endswith(('.fit', '.rsp2'))]
 
         for file in tqdm(fit_files, desc="Downloading files"):
             file_url = url + file
@@ -86,7 +94,11 @@ class GDT_interactions():
         
         if detector is None:
             raise ValueError("Detector needs to be given")
-        else:
+        elif isinstance(detector, str):
+            self.detector = [int(detector)]
+        elif isinstance(detector, int):
+            self.detector = [detector]        
+        elif isinstance(detector, list):
             self.detector = detector
         
         if folder[-1] != '/':
@@ -99,10 +111,14 @@ class GDT_interactions():
                 download_fermi_files(folder, url)
             else:
                 raise ValueError('Requires a URL for downloading files')
+            
+        # raise Exception('ya')
         
         
         healpix_file = glob(folder + '*healpix*')[0]
         self.midsection = healpix_file.split('.fit')[0].split('_')[3]
+        
+        # print('Midsection:', self.midsection)
         
         self.healpix_file = healpix_file
         self.folder = folder
@@ -176,50 +192,109 @@ class GDT_interactions():
     
     def tte_phaii_analysis(self):
         
-        tte = GbmTte.open(self.folder + f'glg_tte_n{str(self.detector)}_{self.midsection}_v00.fit')
-        # tte = 
-        phaii = tte.to_phaii(bin_by_time, self.bin_by_time, time_ref=self.time_ref)
+        lc_bin_centers_list = []
+        corrected_lc_flux_list = []
+        lc_uncert_list = []
         
-        fitter = BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=self.bkgd_times)
-
-        fitter.fit(order=self.poly_order_bkg)
-
-        back_rates = fitter.interpolate_bins(self.time_interp[:-1], self.time_interp[1:])
+        src_pha_list = []
+        bkg_spec_list = []
+        rsp_list = []
         
-        if self.init_plot:
-            lcplot = Lightcurve(data=phaii.to_lightcurve(energy_range=self.erange), 
-                                background=back_rates.integrate_energy(*self.erange))
+        energy_range_nai=(8,900) # energy range for the NaI detectors
+        # energy_range_bgo=(325,35000) # energy range for the BGO detectors 
         
+        for detector in self.detector:
 
-        src_lc = phaii.to_lightcurve(time_range=self.src_time, energy_range=self.erange)
+            tte = GbmTte.open(f"{self.folder}/glg_tte_n{detector}_{self.midsection}_v00.fit")
+
+            rsp2 = GbmRsp2.open(f"{self.folder}/glg_cspec_n{detector}_{self.midsection}_v01.rsp2")
+
+            phaii = tte.to_phaii(bin_by_time, self.bin_by_time, time_ref=self.time_ref)
+
+            fitter = BackgroundFitter.from_phaii(phaii, Polynomial, time_ranges=self.bkgd_times)
+            fitter.fit(order=self.poly_order_bkg)
+
+            back_rates = fitter.interpolate_bins(self.time_interp[:-1],self.time_interp[1:])
+
+            lc_bin_centers, corrected_lc_flux, lc_uncert = self.light_curve_analysis(phaii, back_rates)
+
+            bkg_spec = back_rates.integrate_time(*self.src_time)
+
+            # src_pha = phaii.to_spectrum(time_range=self.src_time, energy_range=self.erange)
+            
+            src_pha = phaii.to_pha(time_range=self.src_time, energy_range=self.erange)
+
+            t_mid = 0.5 * (self.src_time[0] + self.src_time[1])
+            rsp = rsp2.interpolate(t_mid)
+
+            lc_bin_centers_list.append(lc_bin_centers)
+            corrected_lc_flux_list.append(corrected_lc_flux)
+            lc_uncert_list.append(lc_uncert)
+
+            src_pha_list.append(src_pha)
+            bkg_spec_list.append(bkg_spec)
+            rsp_list.append(rsp)
+            
+        final_lc_bin_centres = np.nanmean(lc_bin_centers_list, axis = 0)
+        final_corrected_lc_flux = np.nansum(corrected_lc_flux_list, axis = 0)
+        final_lc_uncert = np.sqrt(np.nansum(np.stack(lc_uncert_list)**2, axis=0))
+        
+        lc = [final_lc_bin_centres, final_corrected_lc_flux, final_lc_uncert]
+        
+        return lc
+
+    def light_curve_analysis(self, phaii, back_rates):
         
         lc_bin_centers = phaii.to_lightcurve(energy_range=self.erange).centroids
-        lc_bin_widths = phaii.to_lightcurve(energy_range=self.erange).widths
+        # lc_bin_widths = phaii.to_lightcurve(energy_range=self.erange).widths
         lc_flux = phaii.to_lightcurve(energy_range=self.erange).rates
         lc_uncert = phaii.to_lightcurve(energy_range=self.erange).rate_uncertainty
+        
 
         back_time = back_rates.integrate_energy(*self.erange).time_centroids
         back_ratee = back_rates.integrate_energy(*self.erange).rates
-
+        
         m = (back_ratee[1] - back_ratee[0]) / (back_time[1] - back_time[0])
 
         f = interp1d(back_time, back_ratee, kind='linear', fill_value='extrapolate')
-
-        spectra_bin_centers = phaii.to_spectrum(time_range=self.src_time, energy_range=self.erange).centroids
-        spectra_bin_widths = phaii.to_spectrum(time_range=self.src_time, energy_range=self.erange).widths
-        spectra_flux = phaii.to_spectrum(time_range=self.src_time, energy_range=self.erange).rates_per_kev
-        spectra_uncert = phaii.to_spectrum(time_range=self.src_time, energy_range=self.erange).rate_uncertainty_per_kev
-
-        spec_bkgd = back_rates.integrate_time(*self.src_time)
-
-        spectra_back_time = spec_bkgd.centroids
-        spectra_back_ratee = spec_bkgd.rates_per_kev
         
         corrected_lc_flux = lc_flux - m*lc_bin_centers - f(0)
         
-        indices = np.where(np.isin(spectra_back_time, spectra_bin_centers))[0]
+        light_curve_details = [lc_bin_centers, corrected_lc_flux, lc_uncert]
         
-        corrected_spectra_flux = spectra_flux - spectra_back_ratee[indices]
+        return light_curve_details
         
-        return lc_bin_centers, corrected_lc_flux, lc_uncert, spectra_bin_centers, corrected_spectra_flux, spectra_uncert
+        # if self.init_plot:
+        #     lcplot = Lightcurve(data=phaii.to_lightcurve(energy_range=self.erange), 
+        #                         background=back_rates.integrate_energy(*self.erange))
+        
+
+
+
+        # spectra_bin_centers = phaii.to_spectrum(time_range=self.src_time, energy_range=self.erange).centroids
+        
+        # spectra_bin_widths = phaii.to_spectrum(time_range=self.src_time, energy_range=self.erange).widths
+        # spectra_flux = phaii.to_spectrum(time_range=self.src_time, energy_range=self.erange).rates_per_kev
+        # spectra_uncert = phaii.to_spectrum(time_range=self.src_time, energy_range=self.erange).rate_uncertainty_per_kev
+
+        # spec_bkgd = back_rates.integrate_time(*self.src_time)
+
+        # spectra_back_time = spec_bkgd.centroids
+        # spectra_back_ratee = spec_bkgd.rates_per_kev
+        
+        
+        
+        # indices = np.where(np.isin(spectra_back_time, spectra_bin_centers))[0]
+        
+        # corrected_spectra_flux = spectra_flux - spectra_back_ratee[indices]
+        
+        # # return  spectra_bin_centers, corrected_spectra_flux, spectra_uncert
+        
+        # # 
+        # spectra_details = [spectra_bin_centers, corrected_spectra_flux, spectra_uncert]
+        
+        
+        
+        # return spec_dataset, spectra_details
+
 
